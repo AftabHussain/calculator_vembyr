@@ -1,0 +1,36 @@
+/*The following example (in particular the parser invoker file: main_calc.cpp) is based on the xcap idl project for lcds*/
+
+A Simple Calculator Parser built using vembyr
+---------------------------------------------
+
+1. Check the grammar file you created for errors:
+
+	$ vembyr-1.1/peg.py calc_grammar.peg 
+	> Grammar file 'calc_grammar.peg' looks good./hello  Use some options to generate a peg parser. -h will list all available options.
+
+2. Based on the grammar file, generate a c++ parser using vembyr. This comprises of two steps: generating the cpp parser file and the corresponding header file.
+
+	$ vembyr-1.1/peg.py calc_grammar.peg --c++ --save=calc.cpp
+	$ vembyr-1.1/peg.py calc_grammar.peg --h --save=calc.h
+
+calc.cpp and calc.h are therefore our parser files.
+
+3. Create a main_calc.cpp file that simply invokes the parser you just created on a given input. In this example, if the parse succeeds, nothing happens, else an error is reported. In this example, we have also created a supported error.cpp file for error logic mgt.
+
+4. Compile the parser files and the supported file that invoke the parser.
+
+	$ g++ -fpermissive calc.cpp -c -o calc.o && g++ main_calc.cpp -c -o main_calc.o && g++ error.cpp -c -o error.o
+
+5. Link and generate executable binaries.
+
+	$ g++ -o calc_compiler main_calc.o calc.o error.o
+
+6. Run the parser executable on a given input.
+
+	$ ./calc_compiler calc_input 
+ 
+(Remember to truncate the input to remove the last byte, in order to get rid of the new line character. Our parser does not understand newlines, as the grammar in our example does not handle that.)
+
+	$ truncate --size=1 calc_input
+
+NOTE: The above parser that we generate does note create any abstract syntax tree.

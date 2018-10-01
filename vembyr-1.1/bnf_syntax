@@ -1,0 +1,205 @@
+start-symbol: <name>
+rules:
+  <name> = <pattern> | <pattern> ... 
+
+A Pattern can be:
+  "<literal>"
+  <name of rule>
+  pattern*
+  pattern?
+  pattern+
+  [<characters>]
+  <eof>
+
+BNF grammar for a peg grammar
+
+start-symbol: start
+
+
+rules:
+    start = newlines whitespace start_symbol:start_symbol newlines whitespace options:options? newlines whitespace module:module? newlines whitespace include:include? newlines whitespace code:more_code? newlines whitespace rules:rules newlines whitespace <eof> {{value = peg.Peg(start_symbol, include, code, module, rules, options)}}
+    
+    module = "module:" spaces name:word rest:("." word {{value = $2}})* {{value = [name] + rest}}
+    
+    include = "include:" spaces code:code {{value = code.code}}
+    
+    more_code = "code:" spaces code:code {{value = code.code}}
+    
+    options = "options:" spaces option1:option option_rest:(spaces "," spaces option)* {{
+    value = []
+    for option in ([option1] + option_rest):
+        import re
+        debug = re.compile("debug(\d+)")
+        out = debug.match(option)
+        if out != None:
+            num = int(out.group(1))
+            for x in xrange(1,num+1):
+                value.append('debug%d' % x)
+        elif option == 'no-memo':
+            value.append(option)
+        else:
+            value.append(option)
+    }}
+    
+    option = "debug" number:number {{
+    value = 'debug%s' % number
+    }}
+           | "state"
+           | "no-memo"
+           | error_option
+           | chunks
+    
+    chunks = "chunks" whitespace number:number {{
+    value = 'chunks %s' % number
+    }}
+    
+    error_option = "error-length" whitespace number:number {{
+    value = 'error-length %s' % number
+    }}
+    
+    word = any_char+ {{
+    # print "all start symbol values " + str(values)
+    # print "values[0] " + str(values[0])
+    value = ''.join(values[0]).replace('-', '__')
+    # print "got word " + value
+    }}
+    
+    rules = "rules:" whitespace rules:(rule whitespace {{value = $1}})* {{value = rules}}
+    
+    rule = spaces inline:"inline"? spaces name:word rule_parameters:rule_parameters? parameters:value_parameters? spaces "=" spaces pattern1:pattern_line whitespace patterns:(spaces "|" spaces pattern:pattern_line whitespace {{value = pattern}})* fail:failure? {{
+    value = peg.Rule(name, [pattern1] + patterns, inline = (inline != None), rules = rule_parameters, parameters = parameters, fail = fail)}}
+    
+    pattern_line = patterns:pattern* {{
+    value = peg.PatternSequence(patterns)
+    #if code != None:
+    #    value = code(peg.PatternSequence(patterns))
+    #else:
+    #    value = peg.PatternAction(peg.PatternSequence(patterns), "value = values;")
+    }}
+    
+    pattern = bind:bind? item:item spaces {{
+    # value = peg.PatternRule(values[0])
+    if bind != None:
+        item = bind(item)
+    value = item
+    # print "Pattern is " + str(value)
+    }}
+    
+    raw_code = "(" spaces code:code spaces ")" {{value = code.code}}
+    
+    inline code = "{{" (!"}}" . {{value = values[1]}})+ "}}" {{value = peg.PatternCode(''.join(values[1]))}}
+    
+    item = ensure:"&"? pnot:"!"? pattern:or modifier:modifier? {{
+    if modifier != None:
+        pattern = modifier(pattern)
+    if pnot != None:
+        pattern = peg.PatternNot(pattern)
+    if ensure != None:
+        pattern = peg.PatternEnsure(pattern)
+    value = pattern
+    }}
+    
+    failure = whitespace "<fail>" spaces code:code {{value = code.code}}
+    
+    inline line = "<line>" {{value = peg.PatternLine()}}
+    
+    predicate = "<predicate" whitespace variable:word whitespace ">" whitespace code:code {{value = peg.PatternPredicate(variable, code.code)}}
+    
+    utf8 = "<utf8" spaces num:hex_number spaces ">" {{value = peg.createUtf8Pattern(num)}}
+    
+    ascii = "<ascii" spaces num:number spaces ">" {{value = peg.PatternVerbatim(int(num))}}
+    
+    call_rule = "@" name:word rule_parameters:parameters_rules? parameters:parameters_values? {{value = peg.PatternCallRule(name, rule_parameters, parameters)}}
+    
+    inline eof = "<eof>" {{value = peg.PatternEof()}}
+    
+    inline void = "<void>" {{value = peg.PatternVoid()}}
+    
+    inline range = "[" (!"]" . {{value = values[1]}})* "]" {{
+    value = peg.PatternRange(''.join(values[1]))
+    }}
+    
+    sub_pattern = "(" pattern+ ")" {{
+    value = peg.PatternSequence(values[1])
+    }}
+    
+    bind = name:word ":" {{
+    value = lambda p: peg.PatternBind(name, p)
+    }}
+    
+    inline string = """ (!""" . {{value = values[1]}})* """ options:"{case}"? {{
+    value = peg.PatternVerbatim(''.join(values[1]), options)
+    }}
+                  | "<quote>" {{value = peg.PatternVerbatim('"')}}
+    
+    inline modifier = "*" {{
+    value = lambda p: peg.PatternRepeatMany(p)
+    }}
+                    | "?" {{
+    value = lambda p: peg.PatternMaybe(p)
+    }}
+                    | "+" {{
+    value = lambda p: peg.PatternRepeatOnce(p)
+    }}
+    
+    x_word = name:word rule_parameters:parameters_rules? parameters:parameters_values? {{
+    value = peg.PatternRule(name, rule_parameters, parameters)
+    }}
+    
+    rule_parameters = "[" spaces param1:word params:(spaces "," spaces exp:word {{value = exp}})* spaces "]" {{value = [param1] + params}}
+    
+    value_parameters = "(" spaces param1:word params:(spaces "," spaces exp:word {{value = exp}})* spaces ")" {{value = [param1] + params}}
+    
+    parameters_rules = "[" spaces param1:word_or_at params:(spaces "," spaces exp:word_or_at {{value = exp}})* spaces "]" {{value = [param1] + params}}
+    
+    parameters_values = "(" spaces param1:word_or_dollar params:(spaces "," spaces exp:word_or_dollar {{value = exp}})* spaces ")" {{value = [param1] + params}}
+    
+    word_or_dollar = word
+                   | dollar
+    
+    word_or_at = word
+               | word_at
+    
+    word_at = "@" word:word {{value = '@%s' % word}}
+    
+    dollar = "$" number:number {{value = "$%s" % number}}
+    
+    number = digit+ {{value = ''.join(values[0])}}
+    
+    inline digit = [0123456789]
+    
+    hex_number = hex_digit+ {{value = ''.join(values[0])}}
+    
+    inline hex_digit = [0123456789abcdefABCDEF]
+    
+    start_symbol = "start-symbol:" space* word {{value = values[2]}}
+    
+    spaces = space*
+    
+    inline space = " "
+                 | "\t"
+    
+    inline any_char = [abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890_-]
+    
+    inline any = "." {{value = peg.PatternAny()}}
+    
+    whitespace = or*
+    
+    inline comment = "#" (!"\n" .)*
+    
+    inline newlines_one = "\n"+
+    
+    inline newlines = "\n"*
+
+Options:
+-h,--help,help : Print this help
+--help-syntax : Explain syntax of BNF (Backus-Naur form) for grammar files
+--bnf : Generate BNF description (grammar language)
+--ruby : Generate Ruby parser
+--python : Generate Python parser
+--lua : Generate Lua parser
+--cpp,--c++ : Generate C++ parser
+--h : Generate C++ header for the C++ functions
+--save=filename : Save all generated parser output to a file, 'filename'
+--peg-name=name : Name the peg module 'name'. The intermediate peg module will be written as peg_<name>.py. Defaults to 'peg'.
+Give a BNF grammar file as an argument
